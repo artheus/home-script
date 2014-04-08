@@ -1,0 +1,115 @@
+#!/usr/bin/python
+
+import simplejson as json
+import time
+import sys
+import subprocess
+import netifaces
+import socket
+import fcntl
+import struct
+
+def build_line(name, full_text, min_width='', align='center'):
+  return {
+    'name':name,
+    'full_text':full_text,
+    'align': align,
+    'min_width': min_width}
+
+def get_ip_addresses():
+  s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+  
+  ifaces = {}
+
+  for iface in netifaces.interfaces():
+    if iface == 'lo':
+      continue
+
+    try:
+      ifaces[iface] = socket.inet_ntoa(fcntl.ioctl(
+        s.fileno(),
+        0x8915, # SIOCGIFADDR
+        struct.pack('256s', iface[:15])
+      )[20:24])
+    except:
+      pass
+
+  return ifaces
+
+def get_ip():
+  ips = get_ip_addresses()
+  
+  ip = ''
+
+  for (iface, addr) in ips.items():
+    ip += ' ' + iface + ': ' + addr + ' '
+
+  color = "#22ee33"
+
+  if ip == '':
+    ip = 'No net'
+    color = "#ee2233"
+
+  status = build_line(
+    'getip',
+    ip
+  )
+
+  status['color'] = color
+ 
+  return status
+
+def get_time():
+  status = build_line(
+    'time',
+    time.strftime(" %Y-%m-%d %H:%M:%S ")
+  ) 
+
+  return status 
+
+def get_battery_status():
+  f_aconline = open('/sys/class/power_supply/AC/online', 'r')
+  aconline = (int(f_aconline.read()) == 1)
+  f_aconline.close()
+
+  f_cap0 = open('/sys/class/power_supply/BAT0/capacity', 'r') 
+  cap0 = int(f_cap0.read())
+  f_cap0.close()
+
+  f_cap1 = open('/sys/class/power_supply/BAT1/capacity', 'r') 
+  cap1 = int(f_cap1.read())
+  f_cap1.close() 
+
+  status = build_line(
+    'battery',
+    " B0: {}%  B1: {}% ".format(cap0, cap1)
+  )
+
+  if not aconline:
+    status['color'] = '#eeee33'
+
+  if cap0 < 15 or cap1 < 15:
+    status['color'] = '#ee2233'
+
+  return status
+
+def get_all():
+  return [
+    get_battery_status(),
+    get_ip(),
+    get_time()
+  ]
+
+def prln(line):
+  sys.__stdout__.write('{}\n'.format(line))
+  sys.__stdout__.flush()
+
+if __name__ == "__main__":
+  # Print headers and inits
+  prln("{ \"version\": 1 }")
+  prln("[")
+  prln("[]")
+
+  while True:
+    prln(','+json.dumps(get_all(), separators=(',',':')))
+    time.sleep(1)
